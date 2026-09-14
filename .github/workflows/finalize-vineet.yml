@@ -1,0 +1,244 @@
+name: Finalize Vineet portfolio
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - .github/workflows/finalize-vineet.yml
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  finalize:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Restore Sierra portfolio source
+        shell: bash
+        run: |
+          set -euo pipefail
+          curl -fsSL https://sierra-portfolio-beige.vercel.app/vini-source.tar.gz -o /tmp/vini-source.tar.gz
+          mkdir -p /tmp/vini-source
+          tar -xzf /tmp/vini-source.tar.gz -C /tmp/vini-source
+          find . -mindepth 1 -maxdepth 1 ! -name .git -exec rm -rf {} +
+          rsync -a /tmp/vini-source/ ./
+          rm -rf .github
+
+      - name: Add approved Vineet content test
+        shell: bash
+        run: |
+          cat > src/data/vineet-content.test.ts <<'EOF'
+          import { describe, expect, it } from "vitest";
+          import { education, experience, profile } from "./content";
+
+          describe("Vineet portfolio content", () => {
+            it("uses Vineet Singh as the portfolio identity", () => {
+              expect(profile.name).toBe("Vineet Singh");
+              expect(profile.location).toBe("Galesburg, Illinois");
+              expect(profile.email).toBe("vineet.singh14204@gmail.com");
+            });
+
+            it("shows the Knox College education from Vineet's resume", () => {
+              expect(education).toEqual([
+                {
+                  school: "Knox College, Galesburg, IL",
+                  detail: "B.S. Computer Science · B.A. Business (Accounting & Finance)",
+                  period: "Graduating Winter 2026",
+                },
+              ]);
+            });
+
+            it("includes the highlighted F&M Bank teller experience", () => {
+              const bank = experience.find((job) => job.role === "Bank Teller" && job.org === "F&M Bank");
+              expect(bank).toBeDefined();
+              expect(bank?.period).toBe("Sep 2023 – Sep 2024");
+              expect(bank?.tags[0]).toBe("Highlighted");
+              expect(bank?.points).toContain("Processed $3–4M+ in financial transactions with zero compliance errors");
+              expect(bank?.points).toContain("Identified cross-selling opportunities while maintaining high accuracy and risk awareness");
+            });
+          });
+          EOF
+
+      - name: Apply approved Vineet content and identity
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          import re
+
+          content = Path("src/data/content.ts")
+          text = content.read_text()
+
+          text = re.sub(
+              r'export const profile = \{.*?\n\};',
+              '''export const profile = {
+            name: "Vineet Singh",
+            location: "Galesburg, Illinois",
+            email: "vineet.singh14204@gmail.com",
+            role: "AI Automation & Product Operations",
+            roleSecondary:
+              "Customer-facing workflows, internal tools, and revenue operations.",
+            summary: "I build AI workflows and digital products for customer acquisition, service, and follow-up.",
+          };''',
+              text,
+              count=1,
+              flags=re.S,
+          )
+
+          text = re.sub(
+              r'export const links = \{.*?\n\};',
+              '''export const links = {
+            email: "vineet.singh14204@gmail.com",
+            linkedin: "https://linkedin.com/in/vsingh14204",
+            github: "https://github.com/VineetSingh142004",
+          };''',
+              text,
+              count=1,
+              flags=re.S,
+          )
+
+          text = re.sub(
+              r'export const education = \[.*?\n\];',
+              '''export const education = [
+            {
+              school: "Knox College, Galesburg, IL",
+              detail: "B.S. Computer Science · B.A. Business (Accounting & Finance)",
+              period: "Graduating Winter 2026",
+            },
+          ];''',
+              text,
+              count=1,
+              flags=re.S,
+          )
+
+          bank = '''export const experience = [
+            {
+              role: "Bank Teller", org: "F&M Bank", period: "Sep 2023 – Sep 2024",
+              tags: ["Highlighted", "Financial operations", "Compliance"],
+              flow: ["Transaction received", "Identity verified", "Transaction processed", "Compliance checked"],
+              points: [
+                "Processed $3–4M+ in financial transactions with zero compliance errors",
+                "Identified cross-selling opportunities while maintaining high accuracy and risk awareness",
+              ],
+            },'''
+          text = text.replace("export const experience = [", bank, 1)
+
+          # The old Sierra PDF must never ship in Vineet's portfolio. Until Vineet's
+          # PDF is added below, keep the existing Resume control useful by opening his LinkedIn.
+          text = text.replace(
+              'export const RESUME_HREF = "/Sierra_Byrd_Resume.pdf";',
+              'export const RESUME_HREF = "https://linkedin.com/in/vsingh14204";',
+          )
+          content.write_text(text)
+
+          replacements = {
+              "Sierra Byrd": "Vineet Singh",
+              "Sierra&apos;s": "Vineet&apos;s",
+              "Sierra's": "Vineet's",
+              "Sierra": "Vineet",
+              "sbyrd23@csu.edu": "vineet.singh14204@gmail.com",
+              "Chicago, Illinois": "Galesburg, Illinois",
+              "sierra-portfolio": "vini-resume",
+          }
+
+          files = [Path("index.html"), Path("README.md"), Path("public/og.svg")]
+          files += list(Path("src").rglob("*.ts"))
+          files += list(Path("src").rglob("*.tsx"))
+          for file in files:
+              if not file.exists() or file == content:
+                  continue
+              s = file.read_text()
+              for old, new in replacements.items():
+                  s = s.replace(old, new)
+              file.write_text(s)
+
+          about = Path("src/components/About.tsx")
+          s = about.read_text()
+          s = s.replace(
+              "Nursing, computer science, and practical operations",
+              "Computer science, business, and practical operations",
+          )
+          s = s.replace(
+              "Vineet is a rising sophomore at Chicago State University pursuing a Bachelor of Science in Nursing with a minor in Computer Science. Her work spans customer-facing AI, ecommerce, websites, product operations, tutoring, and community education.",
+              "Vineet is completing a Bachelor of Science in Computer Science and a Bachelor of Arts in Business (Accounting & Finance) at Knox College. His work spans customer-facing AI, ecommerce, websites, product operations, tutoring, and community education.",
+          )
+          s = s.replace(
+              "The nursing and customer-operations background shapes how she handles privacy, clear communication, accurate information capture, and the moment when technology should hand a situation to a person.",
+              "His computer-science, business, and customer-operations background shapes how he handles privacy, clear communication, accurate information capture, and the moment when technology should hand a situation to a person.",
+          )
+          about.write_text(s)
+
+          side = Path("src/components/SideWork.tsx")
+          s = side.read_text().replace(
+              "These experiences show how she communicates, adapts, and follows through with people—not just products.",
+              "These experiences show how Vineet communicates, adapts, and follows through with people—not just products.",
+          )
+          side.write_text(s)
+
+          exp = Path("src/components/Experience.tsx")
+          s = exp.read_text()
+          s = s.replace(
+              "const palette = palettes[i % palettes.length];\n          return (",
+              'const palette = palettes[i % palettes.length];\n          const highlighted = job.tags.includes("Highlighted");\n          return (',
+          )
+          s = s.replace(
+              "${palette.soft}`}",
+              '${palette.soft} ${highlighted ? "ring-1 ring-inset ring-[var(--theme-sky)]/35" : ""}`}',
+              1,
+          )
+          exp.write_text(s)
+
+          index = Path("index.html")
+          s = index.read_text()
+          s = s.replace('"telephone": "+1-872-242-0771"', '"telephone": "+1-309-315-0283"')
+          s = s.replace('"addressLocality": "Chicago"', '"addressLocality": "Galesburg"')
+          s = re.sub(
+              r'"alumniOf": \[.*?\],\n        "knowsAbout"',
+              '"alumniOf": [\n          { "@type": "CollegeOrUniversity", "name": "Knox College" }\n        ],\n        "knowsAbout"',
+              s,
+              count=1,
+              flags=re.S,
+          )
+          index.write_text(s)
+
+          Path("README.md").write_text("# Vineet Singh Portfolio\n\nPortfolio site for Vineet Singh.\n")
+
+          package = Path("package.json")
+          s = package.read_text().replace('"name": "sierra-portfolio"', '"name": "vini-resume"')
+          package.write_text(s)
+
+          # Do not ship Sierra's resume under Vineet's name.
+          old_pdf = Path("public/Sierra_Byrd_Resume.pdf")
+          if old_pdf.exists():
+              old_pdf.unlink()
+          PY
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Verify tests lint and production build
+        shell: bash
+        run: |
+          set -euo pipefail
+          npm test
+          npm run lint
+          npm run build
+          if grep -RInE 'Sierra Byrd|sbyrd23@csu.edu|Chicago State University|Kenwood Academy' src index.html public README.md; then
+            echo "Found stale Sierra-specific identity content."
+            exit 1
+          fi
+
+      - name: Commit completed Vineet portfolio
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A
+          git commit -m "Build Vineet portfolio from Sierra design"
+          git push origin HEAD:main
