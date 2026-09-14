@@ -1,0 +1,139 @@
+name: Bootstrap Vineet portfolio v3
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - .github/workflows/bootstrap-vineet-v3.yml
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  bootstrap:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Download Sierra portfolio source
+        run: |
+          set -euo pipefail
+          curl -fsSL https://github.com/zoeyzb/sierra-portfolio/archive/refs/heads/main.tar.gz -o /tmp/sierra.tar.gz
+          mkdir -p /tmp/sierra
+          tar -xzf /tmp/sierra.tar.gz -C /tmp/sierra --strip-components=1
+          cp -R /tmp/sierra/src ./src
+          cp -R /tmp/sierra/public ./public
+          cp /tmp/sierra/index.html ./index.html
+          cp /tmp/sierra/package.json ./package.json
+          cp /tmp/sierra/package-lock.json ./package-lock.json
+          cp /tmp/sierra/tsconfig.json ./tsconfig.json
+          cp /tmp/sierra/tsconfig.app.json ./tsconfig.app.json
+          cp /tmp/sierra/tsconfig.node.json ./tsconfig.node.json
+          cp /tmp/sierra/vite.config.ts ./vite.config.ts
+          cp /tmp/sierra/.gitignore ./.gitignore
+
+      - name: Add Vineet tests before implementation
+        run: |
+          cat > src/data/vineet-content.test.ts <<'EOF'
+          import { describe, expect, it } from "vitest";
+          import { education, experience, profile } from "./content";
+
+          describe("Vineet portfolio content", () => {
+            it("uses Vineet Singh identity", () => {
+              expect(profile.name).toBe("Vineet Singh");
+              expect(profile.location).toBe("Galesburg, Illinois");
+              expect(profile.email).toBe("vineet.singh14204@gmail.com");
+            });
+
+            it("uses Vineet's Knox College education", () => {
+              expect(education).toEqual([{ school: "Knox College, Galesburg, IL", detail: "B.S. Computer Science · B.A. Business (Accounting & Finance)", period: "Graduating Winter 2026" }]);
+            });
+
+            it("includes highlighted F&M Bank experience", () => {
+              const bank = experience.find((job) => job.role === "Bank Teller" && job.org === "F&M Bank");
+              expect(bank?.period).toBe("Sep 2023 – Sep 2024");
+              expect(bank?.tags[0]).toBe("Highlighted");
+              expect(bank?.points).toContain("Processed $3–4M+ in financial transactions with zero compliance errors");
+              expect(bank?.points).toContain("Identified cross-selling opportunities while maintaining high accuracy and risk awareness");
+            });
+          });
+          EOF
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Confirm test is red
+        run: |
+          set +e
+          npm test -- src/data/vineet-content.test.ts
+          code=$?
+          set -e
+          test "$code" -ne 0
+
+      - name: Customize identity education and bank role
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          import re
+
+          p = Path('src/data/content.ts')
+          s = p.read_text()
+          s = re.sub(r'export const profile = \{.*?\n\};', '''export const profile = {
+            name: "Vineet Singh",
+            location: "Galesburg, Illinois",
+            email: "vineet.singh14204@gmail.com",
+            role: "AI Automation & Product Operations",
+            roleSecondary: "Customer-facing workflows, internal tools, and revenue operations.",
+            summary: "I build AI workflows and digital products for customer acquisition, service, and follow-up.",
+          };''', s, count=1, flags=re.S)
+          s = re.sub(r'export const links = \{.*?\n\};', '''export const links = {
+            email: "vineet.singh14204@gmail.com",
+            linkedin: "https://linkedin.com/in/vsingh14204",
+            github: "https://github.com/VineetSingh142004",
+          };''', s, count=1, flags=re.S)
+          s = re.sub(r'export const education = \[.*?\n\];', '''export const education = [
+            { school: "Knox College, Galesburg, IL", detail: "B.S. Computer Science · B.A. Business (Accounting & Finance)", period: "Graduating Winter 2026" },
+          ];''', s, count=1, flags=re.S)
+          bank = '''export const experience = [
+            {
+              role: "Bank Teller", org: "F&M Bank", period: "Sep 2023 – Sep 2024",
+              tags: ["Highlighted", "Financial operations", "Compliance"],
+              flow: ["Transaction received", "Identity verified", "Transaction processed", "Compliance checked"],
+              points: [
+                "Processed $3–4M+ in financial transactions with zero compliance errors",
+                "Identified cross-selling opportunities while maintaining high accuracy and risk awareness",
+              ],
+            },'''
+          s = s.replace('export const experience = [', bank, 1)
+          s = s.replace('export const RESUME_HREF = "/Sierra_Byrd_Resume.pdf";', 'export const RESUME_HREF = "https://github.com/VineetSingh142004";')
+          p.write_text(s)
+
+          repl = {'Sierra Byrd':'Vineet Singh', 'sbyrd23@csu.edu':'vineet.singh14204@gmail.com', 'Chicago, Illinois':'Galesburg, Illinois'}
+          for f in [Path('index.html'), Path('README.md')]:
+              if f.exists():
+                  t=f.read_text()
+                  for a,b in repl.items(): t=t.replace(a,b)
+                  f.write_text(t)
+          for f in Path('src').rglob('*'):
+              if f.suffix not in {'.ts','.tsx'} or f == p: continue
+              t=f.read_text()
+              for a,b in repl.items(): t=t.replace(a,b)
+              f.write_text(t)
+          PY
+
+      - name: Verify tests lint and build
+        run: |
+          npm test
+          npm run lint
+          npm run build
+
+      - name: Commit result
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A
+          git commit -m "Build Vineet portfolio from Sierra design"
+          git push origin HEAD:main
